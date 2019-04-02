@@ -1,5 +1,5 @@
 import React from "react";
-import RecentCall from "calls/components/RecentCallList/RecentCall";
+import RecentCall from "calls/components/recent_calls/RecentCall/RecentCall";
 
 describe("RecentCall component", () => {
   it("renders without crashing", () => {
@@ -40,6 +40,5 @@ describe("RecentCall component", () => {
     expect(wrapper.debug()).toContain("ItemContent");
     expect(wrapper.debug()).toContain("ItemDescription");
     expect(wrapper.debug()).toContain("Icon");
-    expect(wrapper.debug()).toContain("a few seconds");
   });
 });

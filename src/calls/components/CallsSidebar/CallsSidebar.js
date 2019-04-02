@@ -1,11 +1,11 @@
 import React, { Component } from "react";
 import PropTypes from "prop-types";
 import { Grid, Icon, Menu, Responsive } from "semantic-ui-react";
-import RecentCallListContainer from "calls/components/RecentCallList";
+import RecentCallListContainer from "calls/components/recent_calls/RecentCallList";
 import LeftColumn from "common/components/LeftColumn/LeftColumn";
 import ErrorBoundary from "common/components/ErrorBoundary/ErrorBoundary";
 import LeftColumnHeader from "common/components/LeftColumnHeader/LeftColumnHeader";
-import ContactListContainer from "calls/components/ContactsList/ContactListContainer";
+import ContactListContainer from "calls/components/contacts/ContactsList/ContactListContainer";
 
 class CallsSidebar extends Component {
   static propTypes = {

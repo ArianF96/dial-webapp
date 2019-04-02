@@ -1,13 +1,5 @@
 import React, { Children, Component } from "react";
-import { connect } from "react-redux";
 import PropTypes from "prop-types";
-import { bindActionCreators } from "redux";
-
-import * as connectionActionCreators from "calls/actions/connection";
-import * as callActionCreators from "calls/actions/call";
-import * as recentActionCreators from "calls/actions/recent";
-import * as searchActionCreators from "calls/actions/search";
-import * as authActionCreators from "auth/actions/auth";
 import {
   errorMessage,
   infoMessage,
@@ -16,7 +8,6 @@ import {
   toneInMessage,
   toneOutMessage
 } from "common/utils/logs";
-import { success, info, warning } from "common/actions/notifications";
 import ErrorBoundary from "common/components/ErrorBoundary/ErrorBoundary";
 
 export const phoneService = ComponentToWrap => {
@@ -38,15 +29,14 @@ export const phoneService = ComponentToWrap => {
     }
   };
 };
-
 /**
  * Interfaces between Telephony API and UI
  */
-class PhoneProvider extends Component {
+export default class PhoneProvider extends Component {
   static propTypes = {
     onCall: PropTypes.bool.isRequired,
     recipient: PropTypes.object,
-    token: PropTypes.object,
+    token: PropTypes.string,
     children: PropTypes.node,
     requestConnection: PropTypes.func,
     setConnectionFailure: PropTypes.func,
@@ -61,13 +51,15 @@ class PhoneProvider extends Component {
     success: PropTypes.func,
     info: PropTypes.func,
     warning: PropTypes.func,
-    unSelectUser: PropTypes.func.isRequired,
     addRecentCall: PropTypes.func.isRequired,
     acceptOutgoingCall: PropTypes.func.isRequired,
     hangupCall: PropTypes.func.isRequired,
-    endSearch: PropTypes.func.isRequired,
     rejectIncomingCall: PropTypes.func.isRequired,
-    clearToken: PropTypes.func.isRequired
+    doNotDisturb: PropTypes.bool.isRequired
+  };
+
+  static childContextTypes = {
+    phoneService: PropTypes.object.isRequired
   };
 
   state = {
@@ -165,7 +157,10 @@ class PhoneProvider extends Component {
     toneOutMessage(`Authenticating user: ${username}/*****`);
     this.setState({ username: username });
     requestConnection();
-    this.state.dial.authenticate(username, JSON.stringify(token));
+    this.state.dial.authenticate(username, token);
+    // const eToken = this.state.dial.authenticate(username, token);
+    // encryptToken(eToken);
+
     // TODO The ideal thing here is to know if the authentication succeeded
   };
 
@@ -194,20 +189,16 @@ class PhoneProvider extends Component {
   hangUpCurrentCall = () => {
     const { dial } = this.state;
     toneOutMessage(`Hang up current call`);
-    const { addRecentCall, recipient } = this.props;
     this.hangUpCallEvent();
-    addRecentCall(recipient);
     return dial.hangUp();
   };
 
   hangUpCallEvent = () => {
-    const { username } = this.state;
-    const { hangupCall, unSelectUser } = this.props;
+    // const { username } = this.state;
+    const { hangupCall } = this.props;
 
-    logEvent("calls", `hangUp`, `caller: ${username}.`);
-
+    // logEvent("calls", `hangUp`, `caller: ${username}.`);
     hangupCall();
-    unSelectUser();
   };
 
   /**
@@ -217,7 +208,7 @@ class PhoneProvider extends Component {
    * @returns {*}
    */
   makeCall = ({ name, phoneNumber }) => {
-    const { makeCall, isCalling, endSearch } = this.props;
+    const { makeCall, isCalling } = this.props;
     const { dial, username } = this.state;
 
     toneOutMessage(`Calling user ${name} with number ${phoneNumber}`);
@@ -232,7 +223,6 @@ class PhoneProvider extends Component {
     });
     this.playRingbacktone();
     isCalling();
-    endSearch();
     return dial.call(phoneNumber);
   };
 
@@ -246,12 +236,15 @@ class PhoneProvider extends Component {
   };
 
   playRingTone = () => {
-    document
-      .getElementById(this.ringToneId)
-      .play()
-      .catch(() => {
-        errorMessage("RingTone play() raised an error.");
-      });
+    const { doNotDisturb } = this.props;
+    if (!doNotDisturb) {
+      document
+        .getElementById(this.ringToneId)
+        .play()
+        .catch(() => {
+          errorMessage("RingTone play() raised an error.");
+        });
+    }
   };
 
   sendDtmfCommand = tone => {
@@ -263,7 +256,10 @@ class PhoneProvider extends Component {
   };
 
   stopRingTone = () => {
-    document.getElementById(this.ringToneId).pause();
+    const { doNotDisturb } = this.props;
+    if (!doNotDisturb) {
+      document.getElementById(this.ringToneId).pause();
+    }
   };
 
   receiveCall = ({ callerNumber, callerName }) => {
@@ -278,26 +274,22 @@ class PhoneProvider extends Component {
    * It performs all the actions needed by this action.
    */
   rejectIncomingCall = () => {
-    const { unSelectUser, rejectIncomingCall } = this.props;
+    const { rejectIncomingCall } = this.props;
     const { dial } = this.state;
 
     logMessage("Rejecting incoming call");
 
     this.stopRingTone();
-    // addRecentCall(recipient);
-    unSelectUser();
     rejectIncomingCall();
     return dial.hangUp();
   };
 
   rejectOutgoingCall = () => {
-    const { unSelectUser, rejectOutgoingCall } = this.props;
+    const { rejectOutgoingCall } = this.props;
 
     logMessage("Rejecting call");
 
     this.stopRingTone();
-    // addRecentCall(recipient);
-    unSelectUser();
     rejectOutgoingCall();
   };
 
@@ -323,6 +315,17 @@ class PhoneProvider extends Component {
   }
 
   eventHandler = event => {
+    const {
+      setConnected,
+      success,
+      warning,
+      setDisconnected,
+      setConnectionFailure,
+      acceptOutgoingCall,
+      rejectOutgoingCall,
+      callFailed
+    } = this.props;
+
     toneInMessage(`Tone Event received: ${event.name}`);
     toneInMessage(event);
     const tempRejectedMessage = {
@@ -347,17 +350,18 @@ class PhoneProvider extends Component {
         break;
       // Registering
       case "registered":
-        this.props.success(this.registeredNotificationOpts);
-        this.props.setConnected();
-        // this.props.clearToken();
+        setConnected();
+        // if (firstRegister) {
+        //   success(this.registeredNotificationOpts);
+        // }
         break;
       case "unregistered":
-        this.props.warning(this.unRegisteredNotificationOpts);
-        this.props.setDisconnected();
+        warning(this.unRegisteredNotificationOpts);
+        setDisconnected();
         break;
       case "registrationFailed":
         if (event.error !== undefined) {
-          this.props.setConnectionFailure(event.error);
+          setConnectionFailure(event.error);
         }
         break;
       // Calls
@@ -367,30 +371,52 @@ class PhoneProvider extends Component {
       case "accepted":
         // TODO
         this.stopRingbacktone();
-        this.props.recipient.startTime = Date.now();
-        this.props.acceptOutgoingCall();
+        const { setRecipentStartDate } = this.props;
+        setRecipentStartDate(Date.now());
+        acceptOutgoingCall();
         break;
       case "terminated":
         // TODO
         this.stopRingbacktone();
         this.stopRingTone();
-        this.props.success(this.callTerminatedNotificationOpts);
+        if (this.props.onCall) {
+          const { addRecentCall, recipient } = this.props;
+          let recipient2 = recipient;
+          if (!recipient2.name) {
+            recipient2.name = recipient2.phoneNumber;
+          }
+          recipient2.endDate = new Date();
+          addRecentCall(recipient2);
+        }
         this.hangUpCallEvent();
+        success(this.callTerminatedNotificationOpts);
+
         break;
       case "rejected":
         // TODO: Detail doesn't include error field nor error code
-        this.props.rejectOutgoingCall(tempRejectedMessage);
+        rejectOutgoingCall(tempRejectedMessage);
+        const { addRecentCall, recipient } = this.props;
+        let recipient2 = recipient;
+        if (!recipient2.name) {
+          recipient2.name = recipient2.phoneNumber;
+        }
+        recipient2.missed = true;
+        recipient2.endDate = recipient2.startDate;
+        addRecentCall(recipient2);
         this.stopRingbacktone();
         this.hangUpCallEvent();
         break;
       case "failed":
         // TODO
-        this.props.callFailed(tempFailedMessage);
+        callFailed(tempFailedMessage);
         break;
 
       case "inviteReceived":
-        logMessage(event.data);
+        const caller = event.data.session.remoteIdentity.uri.user;
+        logMessage(caller);
         this.receiveCall(event.data);
+        this.props.setRecipentPhoneNumber(caller);
+
         break;
       default:
         errorMessage(`Unhandled event: ${event.name}`);
@@ -402,38 +428,3 @@ class PhoneProvider extends Component {
     return Children.only(children);
   }
 }
-
-PhoneProvider.childContextTypes = {
-  phoneService: PropTypes.object.isRequired
-};
-
-function mapStateToProps({ calls, auth }) {
-  return {
-    recipient: calls.call ? calls.call.recipient : undefined,
-    onCall: calls.call ? calls.call.onCall : false,
-    token: auth.token
-  };
-}
-
-function mapDispatchToProps(dispatch) {
-  return bindActionCreators(
-    {
-      ...connectionActionCreators,
-      ...callActionCreators,
-      ...recentActionCreators,
-      ...searchActionCreators,
-      ...authActionCreators,
-      success,
-      info,
-      warning
-    },
-    dispatch
-  );
-}
-
-export default phoneService(
-  connect(
-    mapStateToProps,
-    mapDispatchToProps
-  )(PhoneProvider)
-);
